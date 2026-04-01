@@ -1,0 +1,17 @@
+# datasets
+*.csv
+
+# models
+*.pkl
+*.bin
+*.h5
+
+# model folders
+indicbert-finetuned/
+xlmr-finetuned/
+
+# notebook checkpoints
+.ipynb_checkpoints/
+
+# misc
+*.log
