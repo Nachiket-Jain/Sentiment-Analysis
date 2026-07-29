@@ -54,7 +54,7 @@ python scripts/quick_fixes.py           # Ensemble optimization
 ## Retraining with Improvements
 
 ```bash
-python scripts/retrain_improved.py --model indicbert   # ~2-3 hrs on RTX 4060
-python scripts/retrain_improved.py --model xlmr         # ~3-4 hrs
-python scripts/retrain_improved.py --model all           # Train both sequentially
+python scripts/retrain_improved.py --model indicbert   
+python scripts/retrain_improved.py --model xlmr         
+python scripts/retrain_improved.py --model all           
 ```
