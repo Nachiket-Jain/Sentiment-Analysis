@@ -18,7 +18,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from scipy.special import softmax
 
 # ── Load saved results ──────────────────────────────────────────────────────────
-PKL_PATH = os.path.join(os.path.dirname(__file__), "evaluation_results.pkl")
+PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
 
 print("=" * 70)
 print("TASK 3: ABLATION STUDY")
@@ -279,7 +279,7 @@ min_val = min(min(accuracies), min(f1_macros))
 ax.set_ylim(max(0, min_val - 0.05), 1.0)
 
 plt.tight_layout()
-plt.savefig("ablation_study_chart.png", dpi=200, bbox_inches="tight")
+plt.savefig("../results/plots/ablation_study_chart.png", dpi=200, bbox_inches="tight")
 plt.close()
 print("✓ Saved ablation_study_chart.png")
 
@@ -288,8 +288,8 @@ print("\n" + "=" * 70)
 print("SAVING RESULTS")
 print("=" * 70)
 
-ablation_df.to_csv("ablation_study_results.csv", index=False)
-contrib_df.to_csv("ablation_component_contributions.csv", index=False)
+ablation_df.to_csv("../results/csv/ablation_study_results.csv", index=False)
+contrib_df.to_csv("../results/csv/ablation_component_contributions.csv", index=False)
 
 print("✓ Saved ablation_study_results.csv")
 print("✓ Saved ablation_component_contributions.csv")

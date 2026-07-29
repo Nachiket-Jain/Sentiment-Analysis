@@ -1,17 +1,25 @@
-# datasets
-*.csv
+# Data files (too large for git)
+data/
 
-# models
-*.pkl
-*.bin
-*.h5
-
-# model folders
+# Model checkpoints (too large for git)
 indicbert-finetuned/
+indicbert-finetuned-v2/
 xlmr-finetuned/
+xlmr-finetuned-v2/
+xlmr-large-finetuned/
 
-# notebook checkpoints
+# Results (regeneratable by running scripts)
+results/
+
+# Python
+__pycache__/
+*.pyc
 .ipynb_checkpoints/
 
-# misc
-*.log
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

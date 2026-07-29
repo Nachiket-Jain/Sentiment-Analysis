@@ -24,9 +24,9 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from collections import defaultdict
 
 # ── Configuration ───────────────────────────────────────────────────────────────
-INDICBERT_DIR = os.path.join(os.path.dirname(__file__), "indicbert-finetuned")
-XLMR_DIR = os.path.join(os.path.dirname(__file__), "xlmr-finetuned")
-PKL_PATH = os.path.join(os.path.dirname(__file__), "evaluation_results.pkl")
+INDICBERT_DIR = os.path.join(os.path.dirname(__file__), "..", "indicbert-finetuned")
+XLMR_DIR = os.path.join(os.path.dirname(__file__), "..", "xlmr-finetuned")
+PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
 
 # Number of test samples to analyze (full test set takes long on CPU)
 N_SAMPLES = 200  # Increase if you have time; 200 takes ~15-30 min on CPU
@@ -291,7 +291,7 @@ for row in summary_rows:
 # ── Visualization ───────────────────────────────────────────────────────────────
 print("\n\nGenerating attribution comparison plots...")
 
-os.makedirs("attribution_plots", exist_ok=True)
+os.makedirs("../results/plots/attribution", exist_ok=True)
 
 # Plot 1: English vs Hinglish attribution distribution
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -320,7 +320,7 @@ for idx, model_name in enumerate(["IndicBERT", "XLM-R"]):
     ax.grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("attribution_plots/english_vs_hinglish_attribution.png", dpi=200, bbox_inches="tight")
+plt.savefig("../results/plots/attribution/english_vs_hinglish_attribution.png", dpi=200, bbox_inches="tight")
 plt.close()
 print("  ✓ Saved attribution_plots/english_vs_hinglish_attribution.png")
 
@@ -354,7 +354,7 @@ ax.legend(fontsize=11)
 ax.grid(axis="y", alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("attribution_plots/attribution_comparison_bar.png", dpi=200, bbox_inches="tight")
+plt.savefig("../results/plots/attribution/attribution_comparison_bar.png", dpi=200, bbox_inches="tight")
 plt.close()
 print("  ✓ Saved attribution_plots/attribution_comparison_bar.png")
 
@@ -375,7 +375,7 @@ ax.set_title("Distribution of Hinglish Token Importance", fontsize=14, fontweigh
 ax.grid(axis="y", alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("attribution_plots/hinglish_top10_boxplot.png", dpi=200, bbox_inches="tight")
+plt.savefig("../results/plots/attribution/hinglish_top10_boxplot.png", dpi=200, bbox_inches="tight")
 plt.close()
 print("  ✓ Saved attribution_plots/hinglish_top10_boxplot.png")
 
@@ -384,7 +384,7 @@ print("\n\n" + "=" * 70)
 print("SAVING RESULTS")
 print("=" * 70)
 
-summary_df.to_csv("attribution_analysis_results.csv", index=False)
+summary_df.to_csv("../results/csv/attribution_analysis_results.csv", index=False)
 print("✓ Saved attribution_analysis_results.csv")
 print("✓ Saved attribution_plots/ (3 visualization files)")
 

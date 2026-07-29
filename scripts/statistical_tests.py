@@ -15,7 +15,7 @@ from scipy import stats
 from itertools import combinations
 
 # ── Load saved results ──────────────────────────────────────────────────────────
-PKL_PATH = os.path.join(os.path.dirname(__file__), "evaluation_results.pkl")
+PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
 
 print("=" * 70)
 print("TASK 1: STATISTICAL SIGNIFICANCE TESTS")
@@ -224,8 +224,8 @@ print("\n\n" + "=" * 70)
 print("SAVING RESULTS")
 print("=" * 70)
 
-mcnemar_df.to_csv("mcnemar_test_results.csv", index=False)
-bootstrap_df.to_csv("bootstrap_ttest_results.csv", index=False)
+mcnemar_df.to_csv("../results/csv/mcnemar_test_results.csv", index=False)
+bootstrap_df.to_csv("../results/csv/bootstrap_ttest_results.csv", index=False)
 
 print("✓ Saved mcnemar_test_results.csv")
 print("✓ Saved bootstrap_ttest_results.csv")

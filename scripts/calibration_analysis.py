@@ -23,7 +23,7 @@ from sklearn.metrics import (
 from scipy.special import softmax
 
 # ── Load saved results ──────────────────────────────────────────────────────────
-PKL_PATH = os.path.join(os.path.dirname(__file__), "evaluation_results.pkl")
+PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
 
 print("=" * 70)
 print("TASK 2: CALIBRATION QUANTITATIVE EVALUATION")
@@ -375,37 +375,37 @@ def plot_reliability_diagram(probs, y_true, preds, model_name, save_path, n_bins
 
 
 # Generate all plots
-os.makedirs("calibration_plots", exist_ok=True)
+os.makedirs("../results/plots/calibration", exist_ok=True)
 
 print("\nGenerating confidence histograms...")
 plot_confidence_histograms(ib_probs, y_test, ib_preds_raw, ib_preds_cal,
-                           "IndicBERT", "calibration_plots/confidence_hist_indicbert.png")
+                           "IndicBERT", "../results/plots/calibration/confidence_hist_indicbert.png")
 plot_confidence_histograms(xlmr_probs, y_test, xlmr_preds_raw, xlmr_preds_cal,
-                           "XLM-RoBERTa", "calibration_plots/confidence_hist_xlmr.png")
+                           "XLM-RoBERTa", "../results/plots/calibration/confidence_hist_xlmr.png")
 plot_confidence_histograms(ensemble_probs, y_test, ensemble_preds_raw, ensemble_preds_cal,
-                           "Ensemble", "calibration_plots/confidence_hist_ensemble.png")
+                           "Ensemble", "../results/plots/calibration/confidence_hist_ensemble.png")
 
 print("\nGenerating reliability diagrams...")
 plot_reliability_diagram(ib_probs, y_test, ib_preds_raw,
-                         "IndicBERT (Before)", "calibration_plots/reliability_indicbert_before.png")
+                         "IndicBERT (Before)", "../results/plots/calibration/reliability_indicbert_before.png")
 plot_reliability_diagram(ib_probs, y_test, ib_preds_cal,
-                         "IndicBERT (After)", "calibration_plots/reliability_indicbert_after.png")
+                         "IndicBERT (After)", "../results/plots/calibration/reliability_indicbert_after.png")
 plot_reliability_diagram(xlmr_probs, y_test, xlmr_preds_raw,
-                         "XLM-R (Before)", "calibration_plots/reliability_xlmr_before.png")
+                         "XLM-R (Before)", "../results/plots/calibration/reliability_xlmr_before.png")
 plot_reliability_diagram(xlmr_probs, y_test, xlmr_preds_cal,
-                         "XLM-R (After)", "calibration_plots/reliability_xlmr_after.png")
+                         "XLM-R (After)", "../results/plots/calibration/reliability_xlmr_after.png")
 plot_reliability_diagram(ensemble_probs, y_test, ensemble_preds_raw,
-                         "Ensemble (Before)", "calibration_plots/reliability_ensemble_before.png")
+                         "Ensemble (Before)", "../results/plots/calibration/reliability_ensemble_before.png")
 plot_reliability_diagram(ensemble_probs, y_test, ensemble_preds_cal,
-                         "Ensemble (After)", "calibration_plots/reliability_ensemble_after.png")
+                         "Ensemble (After)", "../results/plots/calibration/reliability_ensemble_after.png")
 
 # ── Save all tables ─────────────────────────────────────────────────────────────
 print("\n\n" + "=" * 70)
 print("SAVING RESULTS")
 print("=" * 70)
 
-calibration_table.to_csv("calibration_before_after_table.csv", index=False)
-cal_metrics_df.to_csv("calibration_metrics_ece_mce_brier.csv", index=False)
+calibration_table.to_csv("../results/csv/calibration_before_after_table.csv", index=False)
+cal_metrics_df.to_csv("../results/csv/calibration_metrics_ece_mce_brier.csv", index=False)
 
 print("✓ Saved calibration_before_after_table.csv")
 print("✓ Saved calibration_metrics_ece_mce_brier.csv")
