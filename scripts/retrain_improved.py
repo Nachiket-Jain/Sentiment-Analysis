@@ -33,6 +33,7 @@ from transformers import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
+# pyrefly: ignore [missing-import]
 import evaluate
 import warnings
 warnings.filterwarnings("ignore")
