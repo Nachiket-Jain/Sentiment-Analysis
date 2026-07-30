@@ -19,6 +19,8 @@ from scipy.special import softmax
 
 # ── Load saved results ──────────────────────────────────────────────────────────
 PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "csv"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "plots"), exist_ok=True)
 
 print("=" * 70)
 print("TASK 3: ABLATION STUDY")

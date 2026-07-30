@@ -24,6 +24,8 @@ from scipy.special import softmax
 
 # ── Load saved results ──────────────────────────────────────────────────────────
 PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "csv"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "plots"), exist_ok=True)
 
 print("=" * 70)
 print("TASK 2: CALIBRATION QUANTITATIVE EVALUATION")
@@ -180,7 +182,10 @@ def compute_ece(probs, y_true, preds, n_bins=10):
     Bins predictions by confidence, computes |accuracy - confidence| per bin.
     ECE = weighted average of per-bin calibration error.
     """
-    confidences = np.max(probs, axis=1)
+    # Confidence of the class actually predicted (not just argmax of probs) —
+    # matters after rule-based calibration flips a label, since the reported
+    # confidence should reflect the label being reported, not the original argmax.
+    confidences = probs[np.arange(len(preds)), preds]
     accuracies = (preds == y_true).astype(float)
 
     bin_boundaries = np.linspace(0, 1, n_bins + 1)
@@ -213,7 +218,7 @@ def compute_ece(probs, y_true, preds, n_bins=10):
 
 def compute_mce(probs, y_true, preds, n_bins=10):
     """Maximum Calibration Error — max gap across bins."""
-    confidences = np.max(probs, axis=1)
+    confidences = probs[np.arange(len(preds)), preds]
     accuracies = (preds == y_true).astype(float)
 
     bin_boundaries = np.linspace(0, 1, n_bins + 1)
@@ -285,9 +290,96 @@ print("\nNote: Brier Score remains the same before/after because rule-based")
 print("calibration changes predicted labels but not probability distributions.")
 print("For probability-level calibration, temperature scaling would be needed.")
 
-# ── Section C: Confidence Histograms ────────────────────────────────────────────
+# ── Section C: Temperature Scaling (Standard Calibration Baseline) ──────────────
 print("\n\n" + "=" * 70)
-print("C. GENERATING CONFIDENCE HISTOGRAMS")
+print("C. TEMPERATURE SCALING — BASELINE CALIBRATION METHOD")
+print("=" * 70)
+print("Unlike the rule-based calibration above, temperature scaling only reshapes")
+print("confidence (softmax(logits / T)) — it never changes which class wins, so")
+print("accuracy is identical to the raw model by construction. This is the key")
+print("contrast for the paper: our rule changes labels, temperature scaling only")
+print("changes confidence honesty (ECE/MCE/Brier).\n")
+
+import torch
+from sklearn.model_selection import train_test_split
+
+
+def fit_temperature(logits, labels, calib_frac=0.5, seed=42):
+    """
+    Fits a single scalar T minimizing NLL on a held-out calibration split
+    carved out of the test set. Evaluation later uses the complementary
+    split, so T is never fit and scored on the same examples.
+    """
+    idx_calib, idx_eval = train_test_split(
+        np.arange(len(labels)), test_size=1 - calib_frac,
+        stratify=labels, random_state=seed
+    )
+    logits_calib = torch.tensor(logits[idx_calib])
+    labels_calib = torch.tensor(labels[idx_calib])
+
+    def nll_for_T(T):
+        log_probs = torch.log_softmax(logits_calib / T, dim=-1)
+        return torch.nn.functional.nll_loss(log_probs, labels_calib).item()
+
+    T_grid = np.arange(0.1, 5.01, 0.05)
+    nlls = [nll_for_T(T) for T in T_grid]
+    best_T = float(T_grid[int(np.argmin(nlls))])
+
+    return best_T, idx_calib, idx_eval
+
+
+def apply_temperature(logits, T):
+    return torch.softmax(torch.tensor(logits) / T, dim=-1).numpy()
+
+
+temp_scaling_rows = []
+temp_scaling_state = {}
+
+for name, logits, probs, preds_raw, preds_cal in [
+    ("IndicBERT", ib_logits, ib_probs, ib_preds_raw, ib_preds_cal),
+    ("XLM-R", xlmr_logits, xlmr_probs, xlmr_preds_raw, xlmr_preds_cal),
+    ("Ensemble", ensemble_logits, ensemble_probs, ensemble_preds_raw, ensemble_preds_cal),
+]:
+    T, idx_calib, idx_eval = fit_temperature(logits, y_test)
+    probs_scaled = apply_temperature(logits, T)
+    temp_scaling_state[name] = {"T": T, "idx_eval": idx_eval, "probs_scaled": probs_scaled}
+
+    print(f"  {name}: optimal temperature T = {T:.2f}")
+
+    # Score all three methods on the same held-out eval split for a fair comparison
+    idx = idx_eval
+    raw_probs_eval = probs[idx]
+
+    for method_name, m_probs, m_preds in [
+        ("None (raw)", raw_probs_eval, preds_raw[idx]),
+        ("Rule-based (ours)", raw_probs_eval, preds_cal[idx]),
+        (f"Temperature scaling (T={T:.2f})", probs_scaled[idx], preds_raw[idx]),
+    ]:
+        ece, _ = compute_ece(m_probs, y_test[idx], m_preds)
+        mce = compute_mce(m_probs, y_test[idx], m_preds)
+        brier = compute_brier_multiclass(m_probs, y_test[idx])
+        temp_scaling_rows.append({
+            "Model": name,
+            "Method": method_name,
+            "Accuracy": round(accuracy_score(y_test[idx], m_preds), 4),
+            "ECE": ece,
+            "MCE": mce,
+            "Brier Score": brier,
+        })
+
+temp_scaling_df = pd.DataFrame(temp_scaling_rows)
+print("\n" + temp_scaling_df.to_string(index=False))
+print("\nAll rows per model are scored on the same held-out eval split, so methods")
+print("are directly comparable. Expect: temperature scaling holds Accuracy fixed")
+print("and may improve ECE/MCE/Brier; the rule-based method can move Accuracy")
+print("because it changes labels.")
+
+temp_scaling_df.to_csv("../results/csv/calibration_method_comparison.csv", index=False)
+print("\n✓ Saved calibration_method_comparison.csv")
+
+# ── Section D: Confidence Histograms ────────────────────────────────────────────
+print("\n\n" + "=" * 70)
+print("D. GENERATING CONFIDENCE HISTOGRAMS")
 print("=" * 70)
 
 
@@ -299,13 +391,14 @@ def plot_confidence_histograms(probs, y_true, preds_before, preds_after,
     """
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    conf = np.max(probs, axis=1)
-
     for idx, (preds, title_suffix) in enumerate([
         (preds_before, "Before Calibration"),
         (preds_after, "After Calibration")
     ]):
         ax = axes[idx]
+        # Confidence of the label actually reported, not the raw argmax —
+        # so flipped labels after calibration show their own probability.
+        conf = probs[np.arange(len(preds)), preds]
         correct = (preds == y_true)
 
         ax.hist(conf[correct], bins=20, range=(0, 1), alpha=0.7,
@@ -331,7 +424,7 @@ def plot_reliability_diagram(probs, y_true, preds, model_name, save_path, n_bins
     Reliability diagram (calibration curve).
     Shows perfect calibration (diagonal) vs actual calibration per bin.
     """
-    confidences = np.max(probs, axis=1)
+    confidences = probs[np.arange(len(preds)), preds]
     accuracies = (preds == y_true).astype(float)
 
     bin_boundaries = np.linspace(0, 1, n_bins + 1)
@@ -399,6 +492,20 @@ plot_reliability_diagram(ensemble_probs, y_test, ensemble_preds_raw,
 plot_reliability_diagram(ensemble_probs, y_test, ensemble_preds_cal,
                          "Ensemble (After)", "../results/plots/calibration/reliability_ensemble_after.png")
 
+print("\nGenerating temperature-scaling reliability diagrams...")
+for name in ["IndicBERT", "XLM-R", "Ensemble"]:
+    state = temp_scaling_state[name]
+    idx = state["idx_eval"]
+    T = state["T"]
+    probs_scaled = state["probs_scaled"]
+    preds_raw = {"IndicBERT": ib_preds_raw, "XLM-R": xlmr_preds_raw, "Ensemble": ensemble_preds_raw}[name]
+    slug = name.lower().replace("-", "")
+    plot_reliability_diagram(
+        probs_scaled[idx], y_test[idx], preds_raw[idx],
+        f"{name} — Temp. scaling (T={T:.2f})",
+        f"../results/plots/calibration/reliability_{slug}_temperature_scaled.png"
+    )
+
 # ── Save all tables ─────────────────────────────────────────────────────────────
 print("\n\n" + "=" * 70)
 print("SAVING RESULTS")
@@ -409,13 +516,16 @@ cal_metrics_df.to_csv("../results/csv/calibration_metrics_ece_mce_brier.csv", in
 
 print("✓ Saved calibration_before_after_table.csv")
 print("✓ Saved calibration_metrics_ece_mce_brier.csv")
-print("✓ Saved calibration_plots/ (6 histograms + 6 reliability diagrams)")
+print("✓ Saved calibration_method_comparison.csv")
+print("✓ Saved calibration_plots/ (6 histograms + 9 reliability diagrams)")
 
 print("\n" + "-" * 70)
 print("FOR YOUR PAPER:")
 print("-" * 70)
 print("  • Table: Use calibration_before_after_table.csv for Before/After comparison")
 print("  • Table: Use calibration_metrics_ece_mce_brier.csv for ECE/MCE/Brier")
+print("  • Table: Use calibration_method_comparison.csv — rule-based vs temperature")
+print("    scaling, the key novelty contrast (label calibration vs confidence-only)")
 print("  • Figures: Use confidence histograms to show prediction distribution")
 print("  • Figures: Use reliability diagrams to show calibration quality")
 

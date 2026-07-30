@@ -17,10 +17,12 @@ from sklearn.metrics import (
     classification_report, confusion_matrix
 )
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import train_test_split
 
 # ── Load saved results ──────────────────────────────────────────────────────────
 PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "csv"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "plots"), exist_ok=True)
 
 print("=" * 70)
 print("QUICK FIXES: CALIBRATION + WEIGHTED ENSEMBLE")
@@ -173,19 +175,42 @@ print("\n\n" + "=" * 70)
 print("FIX 8: ENSEMBLE STRATEGIES")
 print("=" * 70)
 
+# ── Held-out split for hyperparameter selection ──────────────────────────────
+# The weighted-ensemble alpha below is a tuned hyperparameter, so it must be
+# selected on a split that's separate from the one final numbers are reported
+# on — tuning alpha directly against the same test set it's then scored on
+# (as the original version did) inflates the reported accuracy. All Fix 8
+# strategies are reported on idx_report for a consistent, leak-free comparison.
+idx_tune, idx_report = train_test_split(
+    np.arange(len(y_test)), test_size=0.5, stratify=y_test, random_state=42
+)
+
 ensemble_rows = []
 
 # Strategy 1: Simple average (current)
 simple_logits = (ib_logits + xlmr_logits) / 2.0
 simple_preds = np.argmax(simple_logits, axis=1)
-ensemble_rows.append(compute_all_metrics(y_test, simple_preds, "Ensemble: Simple Average"))
+ensemble_rows.append(compute_all_metrics(y_test[idx_report], simple_preds[idx_report], "Ensemble: Simple Average"))
 
-# Strategy 2: Weighted average (more weight to XLM-R since it's better)
+# Strategy 2: Weighted average — alpha selected on idx_tune, reported on idx_report
+print("\nTuning ensemble weight alpha on held-out tuning split...")
+alpha_tune_rows = []
 for alpha in [0.55, 0.60, 0.65, 0.70]:
     weighted_logits = alpha * xlmr_logits + (1 - alpha) * ib_logits
     weighted_preds = np.argmax(weighted_logits, axis=1)
-    ensemble_rows.append(compute_all_metrics(y_test, weighted_preds,
-                                              f"Ensemble: Weighted (XLM-R={alpha:.0%})"))
+    tune_acc = accuracy_score(y_test[idx_tune], weighted_preds[idx_tune])
+    alpha_tune_rows.append((alpha, tune_acc))
+    print(f"    alpha={alpha:.2f} -> tuning-split accuracy={tune_acc:.4f}")
+
+best_alpha = max(alpha_tune_rows, key=lambda r: r[1])[0]
+print(f"  Selected alpha={best_alpha:.2f} (best on tuning split)")
+
+best_weighted_logits = best_alpha * xlmr_logits + (1 - best_alpha) * ib_logits
+best_weighted_preds = np.argmax(best_weighted_logits, axis=1)
+ensemble_rows.append(compute_all_metrics(
+    y_test[idx_report], best_weighted_preds[idx_report],
+    f"Ensemble: Weighted (XLM-R={best_alpha:.0%}, alpha tuned on held-out split)"
+))
 
 # Strategy 3: Max confidence — pick whichever model is more confident
 max_conf_preds = np.zeros(len(y_test), dtype=int)
@@ -196,41 +221,37 @@ for i in range(len(y_test)):
         max_conf_preds[i] = xlmr_preds[i]
     else:
         max_conf_preds[i] = ib_preds[i]
-ensemble_rows.append(compute_all_metrics(y_test, max_conf_preds, "Ensemble: Max Confidence"))
+ensemble_rows.append(compute_all_metrics(y_test[idx_report], max_conf_preds[idx_report], "Ensemble: Max Confidence"))
 
 # Strategy 4: Stacking (Logistic Regression on model probabilities)
-# Use 5-fold CV to get fair stacking predictions
-print("\nTraining stacked ensemble (5-fold CV)...")
-stacked_preds = np.zeros(len(y_test), dtype=int)
+# Fit only on idx_tune, evaluate on idx_report — avoids scoring the stacker on
+# any row it could have influenced via the meta-feature construction.
+print("\nTraining stacked ensemble (fit on tuning split, scored on report split)...")
 features = np.hstack([ib_probs, xlmr_probs])  # 6 features: 3 probs from each model
 
-skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-for fold_idx, (meta_train, meta_test) in enumerate(skf.split(features, y_test)):
-    stacker = LogisticRegression(C=1.0, max_iter=1000, multi_class="multinomial")
-    stacker.fit(features[meta_train], y_test[meta_train])
-    stacked_preds[meta_test] = stacker.predict(features[meta_test])
+stacker = LogisticRegression(C=1.0, max_iter=1000, multi_class="multinomial")
+stacker.fit(features[idx_tune], y_test[idx_tune])
+stacked_preds_report = stacker.predict(features[idx_report])
 
-ensemble_rows.append(compute_all_metrics(y_test, stacked_preds, "Ensemble: Stacking (LR)"))
+ensemble_rows.append(compute_all_metrics(y_test[idx_report], stacked_preds_report, "Ensemble: Stacking (LR)"))
 
 # Strategy 5: Stacking + include baseline predictions as feature
-# The baseline model has different error patterns (TF-IDF captures different signals)
 baseline_onehot = np.zeros((len(y_test), 3))
 for i, p in enumerate(baseline_preds):
     baseline_onehot[i, p] = 1.0
 features_with_baseline = np.hstack([ib_probs, xlmr_probs, baseline_onehot])
 
-stacked_preds_v2 = np.zeros(len(y_test), dtype=int)
-for fold_idx, (meta_train, meta_test) in enumerate(skf.split(features_with_baseline, y_test)):
-    stacker = LogisticRegression(C=1.0, max_iter=1000, multi_class="multinomial")
-    stacker.fit(features_with_baseline[meta_train], y_test[meta_train])
-    stacked_preds_v2[meta_test] = stacker.predict(features_with_baseline[meta_test])
+stacker_v2 = LogisticRegression(C=1.0, max_iter=1000, multi_class="multinomial")
+stacker_v2.fit(features_with_baseline[idx_tune], y_test[idx_tune])
+stacked_preds_v2_report = stacker_v2.predict(features_with_baseline[idx_report])
 
-ensemble_rows.append(compute_all_metrics(y_test, stacked_preds_v2,
+ensemble_rows.append(compute_all_metrics(y_test[idx_report], stacked_preds_v2_report,
                                           "Ensemble: Stacking (LR + Baseline)"))
 
 # Print comparison
 ensemble_df = pd.DataFrame(ensemble_rows)
-print("\n" + ensemble_df.to_string(index=False))
+print("\nAll rows below are scored on the held-out report split (not seen during alpha/stacker tuning):")
+print(ensemble_df.to_string(index=False))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BEST COMBINATION: Best ensemble + best calibration
@@ -239,29 +260,32 @@ print("\n\n" + "=" * 70)
 print("BEST COMBINATIONS (Ensemble + Calibration)")
 print("=" * 70)
 
-# Find the best ensemble first, then apply conservative calibration on top
+# All rows scored on idx_report — the same held-out split used above, so this
+# stays consistent with (and comparable to) the Fix 8 table.
 combo_rows = []
 
 # Current system
-old_cal_ensemble = apply_old_calibration(softmax(simple_logits, axis=1), reviews, "XLM-R")
-combo_rows.append(compute_all_metrics(y_test, old_cal_ensemble, "OLD: Simple Avg + Old Cal"))
+old_cal_ensemble_full = apply_old_calibration(softmax(simple_logits, axis=1), reviews, "XLM-R")
+combo_rows.append(compute_all_metrics(y_test[idx_report], old_cal_ensemble_full[idx_report],
+                                       "OLD: Simple Avg + Old Cal"))
 
 # Best: No calibration, just XLM-R raw
-combo_rows.append(compute_all_metrics(y_test, xlmr_preds, "XLM-R Raw (no cal, no ensemble)"))
+combo_rows.append(compute_all_metrics(y_test[idx_report], xlmr_preds[idx_report],
+                                       "XLM-R Raw (no cal, no ensemble)"))
 
-# Best: Weighted ensemble, no calibration
-best_weighted = np.argmax(0.60 * xlmr_logits + 0.40 * ib_logits, axis=1)
-combo_rows.append(compute_all_metrics(y_test, best_weighted, "Weighted Ensemble (60/40), no cal"))
+# Best: Weighted ensemble (alpha selected above), no calibration
+combo_rows.append(compute_all_metrics(y_test[idx_report], best_weighted_preds[idx_report],
+                                       f"Weighted Ensemble (XLM-R={best_alpha:.0%}), no cal"))
 
 # Best: Weighted ensemble + conservative calibration
-best_weighted_probs = softmax(0.60 * xlmr_logits + 0.40 * ib_logits, axis=1)
-best_weighted_cal = apply_conservative_calibration(best_weighted_probs, reviews)
-combo_rows.append(compute_all_metrics(y_test, best_weighted_cal,
-                                       "Weighted Ensemble (60/40) + Conservative Cal"))
+best_weighted_probs_full = softmax(best_weighted_logits, axis=1)
+best_weighted_cal_full = apply_conservative_calibration(best_weighted_probs_full, reviews)
+combo_rows.append(compute_all_metrics(y_test[idx_report], best_weighted_cal_full[idx_report],
+                                       f"Weighted Ensemble (XLM-R={best_alpha:.0%}) + Conservative Cal"))
 
-# Stacking results (already computed)
-combo_rows.append(compute_all_metrics(y_test, stacked_preds, "Stacked Ensemble (LR)"))
-combo_rows.append(compute_all_metrics(y_test, stacked_preds_v2, "Stacked Ensemble (LR + Baseline)"))
+# Stacking results (already fit on idx_tune, scored on idx_report above)
+combo_rows.append(compute_all_metrics(y_test[idx_report], stacked_preds_report, "Stacked Ensemble (LR)"))
+combo_rows.append(compute_all_metrics(y_test[idx_report], stacked_preds_v2_report, "Stacked Ensemble (LR + Baseline)"))
 
 combo_df = pd.DataFrame(combo_rows)
 print("\n" + combo_df.to_string(index=False))
@@ -273,7 +297,13 @@ print("\n\n" + "=" * 70)
 print("OVERALL BEST CONFIGURATION")
 print("=" * 70)
 
-# Combine all results
+# Note: cal_df (Fix 7) is scored on the full test set — its calibration
+# variants use fixed, hand-set thresholds rather than anything tuned against
+# labels, so there's no leakage risk in scoring it on the full set. ensemble_df
+# and combo_df (Fix 8) are scored on idx_report only, since alpha/the stacker
+# were tuned on idx_tune. Both are stratified samples of the same
+# distribution, so accuracy/F1 remain comparable across the two — but note
+# the split size difference if you report per-class support in the paper.
 all_results = pd.concat([cal_df, ensemble_df, combo_df], ignore_index=True)
 all_results = all_results.drop_duplicates(subset=["Label"])
 

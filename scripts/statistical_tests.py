@@ -16,6 +16,8 @@ from itertools import combinations
 
 # ── Load saved results ──────────────────────────────────────────────────────────
 PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "csv"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "plots"), exist_ok=True)
 
 print("=" * 70)
 print("TASK 1: STATISTICAL SIGNIFICANCE TESTS")
@@ -67,15 +69,19 @@ print("H1: Models have significantly different error rates\n")
 def mcnemar_test(y_true, preds_a, preds_b):
     """
     McNemar's test for comparing two classifiers on the same test set.
-    
+
     Builds a 2x2 contingency table:
         |             | B correct | B wrong |
         |-------------|-----------|---------|
         | A correct   |    n00    |   n01   |
         | A wrong     |    n10    |   n11   |
-    
+
     Test statistic: chi2 = (|n01 - n10| - 1)^2 / (n01 + n10)
     (with continuity correction)
+
+    For small discordant-pair counts (n01 + n10 < 25), the chi-square
+    approximation is unreliable, so this falls back to the exact binomial
+    test instead — standard practice for McNemar's test on small samples.
     """
     correct_a = (preds_a == y_true)
     correct_b = (preds_b == y_true)
@@ -86,23 +92,34 @@ def mcnemar_test(y_true, preds_a, preds_b):
     n10 = np.sum(~correct_a & correct_b)      # A wrong, B correct
     n11 = np.sum(~correct_a & ~correct_b)     # Both wrong
 
-    # McNemar's test with continuity correction
-    if (n01 + n10) == 0:
+    n_discordant = n01 + n10
+
+    if n_discordant == 0:
         return {
             "n00": int(n00), "n01": int(n01),
             "n10": int(n10), "n11": int(n11),
             "chi2": 0.0, "p_value": 1.0,
+            "method": "n/a",
             "significant": False
         }
 
-    chi2 = (abs(n01 - n10) - 1) ** 2 / (n01 + n10)
-    p_value = 1 - stats.chi2.cdf(chi2, df=1)
+    if n_discordant < 25:
+        # Exact binomial test: under H0, n01 ~ Binomial(n_discordant, 0.5)
+        binom_result = stats.binomtest(int(min(n01, n10)), n_discordant, p=0.5, alternative="two-sided")
+        p_value = binom_result.pvalue
+        chi2 = float("nan")
+        method = "exact binomial"
+    else:
+        chi2 = (abs(n01 - n10) - 1) ** 2 / n_discordant
+        p_value = 1 - stats.chi2.cdf(chi2, df=1)
+        method = "chi2 (continuity corrected)"
 
     return {
         "n00": int(n00), "n01": int(n01),
         "n10": int(n10), "n11": int(n11),
-        "chi2": round(chi2, 4),
+        "chi2": round(chi2, 4) if not np.isnan(chi2) else None,
         "p_value": round(p_value, 6),
+        "method": method,
         "significant": p_value < 0.05
     }
 
@@ -120,21 +137,22 @@ for name_a, name_b in combinations(model_names, 2):
     print(f"  {name_a} vs {name_b}:")
     print(f"    Contingency: A+B+={result['n00']}, A+B-={result['n01']}, "
           f"A-B+={result['n10']}, A-B-={result['n11']}")
-    print(f"    chi2 = {result['chi2']:.4f}, p = {result['p_value']:.6f}"
+    chi2_str = f"{result['chi2']:.4f}" if result["chi2"] is not None else "n/a (exact test)"
+    print(f"    method = {result['method']}, chi2 = {chi2_str}, p = {result['p_value']:.6f}"
           f"  {'*** SIGNIFICANT ***' if result['significant'] else '(not significant)'}")
     print()
 
 # Create McNemar summary table
 mcnemar_df = pd.DataFrame(mcnemar_results)
-mcnemar_df = mcnemar_df[["Model A", "Model B", "chi2", "p_value", "significant",
+mcnemar_df = mcnemar_df[["Model A", "Model B", "method", "chi2", "p_value", "significant",
                           "n01", "n10", "n00", "n11"]]
-mcnemar_df.columns = ["Model A", "Model B", "chi2", "p-value", "Significant (p<0.05)",
+mcnemar_df.columns = ["Model A", "Model B", "Method", "chi2", "p-value", "Significant (p<0.05)",
                        "A+ B-", "A- B+", "Both+", "Both-"]
 
 print("\n" + "-" * 70)
 print("McNEMAR'S TEST SUMMARY TABLE")
 print("-" * 70)
-print(mcnemar_df[["Model A", "Model B", "chi2", "p-value", "Significant (p<0.05)"]].to_string(index=False))
+print(mcnemar_df[["Model A", "Model B", "Method", "chi2", "p-value", "Significant (p<0.05)"]].to_string(index=False))
 
 # ── 2. Bootstrap Paired t-test ──────────────────────────────────────────────────
 print("\n\n" + "=" * 70)
@@ -235,12 +253,13 @@ print("\n" + "-" * 70)
 print("FOR YOUR PAPER — KEY FINDINGS:")
 print("-" * 70)
 for r in mcnemar_results:
+    stat_str = f"chi2={r['chi2']:.2f}" if r["chi2"] is not None else f"exact binomial"
     if r["significant"]:
         print(f"  - {r['Model A']} vs {r['Model B']}: "
-              f"Significantly different (chi2={r['chi2']:.2f}, p={r['p_value']:.4f})")
+              f"Significantly different ({stat_str}, p={r['p_value']:.4f})")
     else:
         print(f"  - {r['Model A']} vs {r['Model B']}: "
-              f"NOT significantly different (chi2={r['chi2']:.2f}, p={r['p_value']:.4f})")
+              f"NOT significantly different ({stat_str}, p={r['p_value']:.4f})")
 
 print("\n" + "=" * 70)
 print("STATISTICAL TESTS COMPLETE")

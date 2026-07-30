@@ -39,13 +39,19 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # ── Configuration ───────────────────────────────────────────────────────────────
+# DATA_PATH is the augmented TRAIN POOL — produced by augment.ipynb, which
+# itself reads Dataset-SA-TrainPool.csv (not the full dataset), so this file
+# is guaranteed to exclude every row in the held-out test set below.
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "Dataset-SA-Augmented.csv")
+# The real, never-augmented held-out test set (from prepare_holdout_split.py).
+# Final reported metrics come from here, not from re-splitting DATA_PATH.
+TEST_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "Dataset-SA-Test-Clean.csv")
 OUTPUT_BASE = os.path.join(os.path.dirname(__file__), "..")
 
 MODELS = {
     "indicbert": {
         "name": "ai4bharat/indic-bert",
-        "output_dir": os.path.join(OUTPUT_BASE, "indicbert-finetuned-v2"),
+        "output_dir": os.path.join(OUTPUT_BASE, "indicbert-finetuned"),
         "remove_token_type_ids": True,
         "learning_rate": 2e-5,
         "batch_size": 16,
@@ -55,7 +61,7 @@ MODELS = {
     },
     "xlmr": {
         "name": "xlm-roberta-base",
-        "output_dir": os.path.join(OUTPUT_BASE, "xlmr-finetuned-v2"),
+        "output_dir": os.path.join(OUTPUT_BASE, "xlmr-finetuned"),
         "remove_token_type_ids": False,
         "learning_rate": 3e-5,
         "batch_size": 16,
@@ -154,23 +160,28 @@ def train_model(model_key):
     print(f"TRAINING: {model_key.upper()} ({config['name']})")
     print("=" * 70)
 
-    # ── Load and split data (FIX 4: Stratified split) ────────────────────────
+    # ── Load train pool + held-out test set (FIX 4: Stratified val split) ────
+    # DATA_PATH (the augmented train pool) never contains the test rows, so
+    # a val split carved from it is safe. The test set is loaded separately
+    # from TEST_PATH — a never-augmented holdout — rather than re-splitting
+    # the augmented data, which would let paraphrased duplicates of the same
+    # underlying review land on both sides of the split.
     print("\n[1/5] Loading dataset...")
     df = pd.read_csv(DATA_PATH)
     df = df[["Review", "Sentiment"]].dropna()
     df = df.sample(frac=1, random_state=SEED).reset_index(drop=True)
     df["label"] = df["Sentiment"].map(label2id)
 
-    # FIX 4: Use stratified split instead of random split
-    train_df, test_df = train_test_split(
-        df, test_size=0.2, stratify=df["Sentiment"], random_state=SEED
-    )
-    # Further split train into train + validation
+    # FIX 4: Stratified train/validation split (validation only, no test split)
     train_df, val_df = train_test_split(
-        train_df, test_size=0.1, stratify=train_df["Sentiment"], random_state=SEED
+        df, test_size=0.1, stratify=df["Sentiment"], random_state=SEED
     )
 
-    print(f"  Train: {len(train_df)}, Validation: {len(val_df)}, Test: {len(test_df)}")
+    test_df = pd.read_csv(TEST_PATH)
+    test_df = test_df[["Review", "Sentiment"]].dropna().reset_index(drop=True)
+    test_df["label"] = test_df["Sentiment"].map(label2id)
+
+    print(f"  Train: {len(train_df)}, Validation: {len(val_df)}, Test (held-out): {len(test_df)}")
     print(f"  Train class distribution:")
     print(f"    {train_df['Sentiment'].value_counts().to_dict()}")
 

@@ -27,6 +27,8 @@ from collections import defaultdict
 INDICBERT_DIR = os.path.join(os.path.dirname(__file__), "..", "indicbert-finetuned")
 XLMR_DIR = os.path.join(os.path.dirname(__file__), "..", "xlmr-finetuned")
 PKL_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "evaluation_results.pkl")
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "csv"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "results", "plots"), exist_ok=True)
 
 # Number of test samples to analyze (full test set takes long on CPU)
 N_SAMPLES = 200  # Increase if you have time; 200 takes ~15-30 min on CPU
@@ -161,16 +163,20 @@ def compute_attribution(text, model, tokenizer, id2label, remove_token_type_ids=
 
 
 def is_hinglish_token(token):
-    """Check if a token is Hinglish/Hindi-origin."""
+    """
+    Check if a token is Hinglish/Hindi-origin.
+
+    Only exact whole-word matches against HINGLISH_TOKENS, plus exact matches
+    on WordPiece/SentencePiece continuation fragments (tokens with no
+    remaining subword marker after cleanup are treated as whole words).
+    The previous version did loose substring containment (`clean in hw or hw
+    in clean`), which misclassified many ordinary English words as Hinglish
+    whenever they happened to contain a short Hindi function word as a
+    substring (e.g. "hair" contains "hai", "seat" contains "se") — that
+    inflated the reported Hinglish/English attribution gap.
+    """
     clean = token.lower().strip()
-    # Direct match
-    if clean in HINGLISH_TOKENS:
-        return True
-    # Check if it's a subword of a Hinglish word
-    for hw in HINGLISH_TOKENS:
-        if len(clean) >= 3 and (clean in hw or hw in clean):
-            return True
-    return False
+    return clean in HINGLISH_TOKENS
 
 
 # ── Run attribution analysis ────────────────────────────────────────────────────
