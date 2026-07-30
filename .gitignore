@@ -1,0 +1,25 @@
+# Data files (too large for git)
+data/
+
+# Model checkpoints (too large for git)
+indicbert-finetuned/
+indicbert-finetuned-v2/
+xlmr-finetuned/
+xlmr-finetuned-v2/
+xlmr-large-finetuned/
+
+# Results (regeneratable by running scripts)
+results/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
