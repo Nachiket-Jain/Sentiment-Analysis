@@ -390,7 +390,7 @@ if __name__ == "__main__":
     print("  5. Early stopping (patience=2 epochs)")
 
     if torch.cuda.is_available():
-        print(f"\nGPU Memory: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+        print(f"\nGPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
     else:
         print("\nWARNING: No GPU detected! Training will be very slow on CPU.")
         print("Consider using Google Colab or a machine with a GPU.")
