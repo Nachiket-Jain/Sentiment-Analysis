@@ -23,3 +23,7 @@ __pycache__/
 # OS
 Thumbs.db
 .DS_Store
+# Reliability experiments: derived SentiMix data and run outputs
+reliability/kaggle_upload/
+reliability/out/
+reliability/_syn/
